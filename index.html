@@ -162,6 +162,25 @@ form .btn{width:100%}
 .done h3{font-size:32px;margin-bottom:12px}
 [hidden]{display:none!important}
 .preview{font-size:13px;color:#8ea398;margin:16px 0 0}
+/* pop-up: appears once, after real interest (scroll or time), never on arrival */
+.pop{position:fixed;inset:0;z-index:50;display:flex;align-items:center;justify-content:center;padding:16px;background:rgba(4,14,11,.62);opacity:0;pointer-events:none;transition:opacity .3s}
+.pop.on{opacity:1;pointer-events:auto}
+.pop .card{position:relative;width:min(440px,100%);background:var(--green);color:var(--ivory);border:1px solid #c6a35a66;border-radius:18px;padding:30px 26px 24px;box-shadow:0 30px 80px rgba(0,0,0,.45);transform:translateY(16px);transition:transform .35s}
+.pop.on .card{transform:none}
+.pop .x{position:absolute;top:10px;right:10px;width:44px;height:44px;border:0;background:transparent;color:var(--mute);font:300 30px/1 Jost,sans-serif;cursor:pointer;border-radius:50%}
+.pop .x:hover{color:var(--ivory)}
+.pop .k{font:600 13px Jost,sans-serif;letter-spacing:.16em;text-transform:uppercase;color:#e0c48a;margin:0 0 10px}
+.pop h3{font-size:34px;line-height:1.05;margin:0 0 8px}
+.pop .s{color:var(--mute);font-size:16px;margin:0 0 18px}
+.pop form{background:none;border:0;padding:0}
+.pop .f2{display:grid;gap:10px}
+.pop input[type=text],.pop input[type=email],.pop select{min-height:48px}
+.pop .check{margin:4px 0 14px;font-size:13px}
+.pop .btn{width:100%}
+.pop .err{min-height:1.1em;margin:0 0 8px}
+.pop .later{display:block;margin:10px auto 0;background:none;border:0;color:var(--mute);font:400 14px Jost,sans-serif;text-decoration:underline;cursor:pointer;min-height:36px}
+@media(max-width:640px){.pop{align-items:flex-end;padding:0}.pop .card{border-radius:18px 18px 0 0;width:100%;padding-bottom:calc(22px + env(safe-area-inset-bottom,0px))}}
+@media(prefers-reduced-motion:reduce){.pop,.pop .card{transition:none}}
 /* faq */
 .faq{display:grid;grid-template-columns:minmax(0,.8fr) minmax(0,1.2fr);gap:clamp(24px,5vw,80px)}
 details{border-top:1px solid var(--line);padding:18px 0}
@@ -405,6 +424,27 @@ footer{padding-bottom:100px}
   </div>
 </footer>
 
+<div class="pop" id="pop" role="dialog" aria-modal="true" aria-labelledby="popT" hidden>
+  <div class="card">
+    <button class="x" type="button" id="popX" aria-label="Sluiten">×</button>
+    <p class="k">Beperkt aantal plaatsen</p>
+    <h3 id="popT">Zet jullie namen op de lijst</h3>
+    <p class="s">Als eerste de datum en voorrang op tickets. Vrijblijvend.</p>
+    <form id="popForm" novalidate>
+      <div class="f2">
+        <input type="text" id="pNaam" placeholder="Jouw voornaam" autocomplete="given-name" aria-label="Jouw voornaam">
+        <input type="email" id="pMail" placeholder="E-mailadres" autocomplete="email" inputmode="email" aria-label="E-mailadres">
+        <select id="pJaar" aria-label="Wanneer trouwen jullie?"><option value="">Wanneer trouwen jullie?</option><option>2027</option><option>2028</option><option>Later</option><option>Nog niet vastgelegd</option></select>
+      </div>
+      <label class="check" for="pOk"><input type="checkbox" id="pOk"><span>El Florido mag mij op de hoogte houden van The Wedding Experience. Uitschrijven kan altijd.</span></label>
+      <p class="err" id="pErr" role="alert"></p>
+      <button class="btn" type="submit" id="pSend">Zet ons op de lijst</button>
+      <button class="later" type="button" id="popLater">Eerst verder lezen</button>
+    </form>
+    <div id="popDone" hidden><h3>Welkom op de lijst</h3><p class="s" style="margin:0">Jullie horen als eerste de datum en krijgen voorrang op tickets.</p></div>
+  </div>
+</div>
+
 <div class="bar" id="bar"><a class="btn" href="#lijst">Zet ons op de wachtlijst</a></div>
 
 <script>
@@ -467,20 +507,66 @@ footer{padding-bottom:100px}
     document.getElementById('vakken').value = [...document.querySelectorAll('#chips input:checked')].map(x => x.value).join(', ');
     if (isPreview) { showDone(); return; }
     send.disabled = true; send.textContent = 'Even geduld…';
-    /* send to the Google Sheet and to Netlify; one of the two arriving is enough */
+    /* send to the Google Sheet */
     const body = new URLSearchParams(new FormData(form)).toString();
-    const head = {'Content-Type':'application/x-www-form-urlencoded'};
-    const jobs = [fetch('/', { method:'POST', headers:head, body }).then(r => { if (!r.ok) throw new Error(r.status); })];
-    if (SHEET_URL) jobs.push(fetch(SHEET_URL, { method:'POST', mode:'no-cors', headers:head, body }));
     try {
-      const res = await Promise.allSettled(jobs);
-      if (!res.some(x => x.status === 'fulfilled')) throw new Error('niet verstuurd');
+      await fetch(SHEET_URL, { method:'POST', mode:'no-cors', headers:{'Content-Type':'application/x-www-form-urlencoded'}, body });
+      mark('aangemeld');
       showDone();
     } catch (x) {
       err.textContent = 'Er ging iets mis bij het versturen. Probeer het zo meteen opnieuw.';
       send.disabled = false; send.textContent = 'Zet ons op de lijst';
     }
   });
+
+  /* remember per visitor: already signed up or closed the pop-up (storage may be unavailable) */
+  function mark(k){ try { localStorage.setItem('twe_' + k, '1'); } catch (e) {} }
+  function seen(k){ try { return localStorage.getItem('twe_' + k) === '1'; } catch (e) { return false; } }
+
+  /* pop-up: shows once, after 40% scroll or 25 s, never while the sign-up section is on screen */
+  {
+    const pop = document.getElementById('pop'), pf = document.getElementById('popForm'), pe = document.getElementById('pErr');
+    const lijst = document.getElementById('lijst');
+    let shown = false, lastFocus = null;
+    const inView = () => { const r = lijst.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; };
+    const open = () => {
+      if (shown || seen('aangemeld') || seen('popup') || inView()) return;
+      shown = true; lastFocus = document.activeElement;
+      pop.hidden = false; requestAnimationFrame(() => pop.classList.add('on'));
+      setTimeout(() => document.getElementById('pNaam').focus({ preventScroll: true }), 350);
+      removeEventListener('scroll', onScroll);
+    };
+    const close = () => {
+      mark('popup'); pop.classList.remove('on');
+      setTimeout(() => { pop.hidden = true; if (lastFocus) lastFocus.focus({ preventScroll: true }); }, 300);
+    };
+    const onScroll = () => { const max = document.documentElement.scrollHeight - innerHeight; if (max > 0 && scrollY / max > 0.4) open(); };
+    addEventListener('scroll', onScroll, { passive: true });
+    setTimeout(open, 25000);
+    document.getElementById('popX').addEventListener('click', close);
+    document.getElementById('popLater').addEventListener('click', close);
+    pop.addEventListener('click', e => { if (e.target === pop) close(); });
+    addEventListener('keydown', e => { if (e.key === 'Escape' && pop.classList.contains('on')) close(); });
+    pf.addEventListener('submit', async e => {
+      e.preventDefault(); pe.textContent = '';
+      const n = document.getElementById('pNaam'), m = document.getElementById('pMail'), j = document.getElementById('pJaar'), ok = document.getElementById('pOk');
+      const bad = !n.value.trim() ? n : !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(m.value.trim()) ? m : !j.value ? j : null;
+      [n, m, j].forEach(el => el.setAttribute('aria-invalid', el === bad ? 'true' : 'false'));
+      if (bad) { pe.textContent = 'Vul je voornaam, e-mail en trouwjaar in.'; bad.focus(); return; }
+      if (!ok.checked) { pe.textContent = 'Vink het akkoord aan zodat we jullie mogen contacteren.'; ok.focus(); return; }
+      const data = new URLSearchParams({ voornaam: n.value.trim(), email: m.value.trim(), trouwjaar: j.value, toestemming: 'ja', bron: 'Pop-up',
+        utm_source: q.get('utm_source') || '', utm_medium: q.get('utm_medium') || '', utm_campaign: q.get('utm_campaign') || '', utm_content: q.get('utm_content') || '' });
+      const btn = document.getElementById('pSend');
+      if (!isPreview) {
+        btn.disabled = true; btn.textContent = 'Even geduld…';
+        try { await fetch(SHEET_URL, { method: 'POST', mode: 'no-cors', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: data.toString() }); }
+        catch (x) { pe.textContent = 'Er ging iets mis. Probeer het zo meteen opnieuw.'; btn.disabled = false; btn.textContent = 'Zet ons op de lijst'; return; }
+      }
+      mark('aangemeld'); mark('popup');
+      pf.hidden = true; document.getElementById('popDone').hidden = false;
+      setTimeout(close, 2600);
+    });
+  }
 
   /* sticky phone button hides while the form is on screen */
   const bar = document.getElementById('bar');
