@@ -528,9 +528,10 @@ footer{padding-bottom:100px}
     const pop = document.getElementById('pop'), pf = document.getElementById('popForm'), pe = document.getElementById('pErr');
     const lijst = document.getElementById('lijst');
     let shown = false, lastFocus = null;
+    const force = /[?&]popup(=|&|$)/.test(location.search); /* ?popup = altijd tonen (om te testen) */
     const inView = () => { const r = lijst.getBoundingClientRect(); return r.top < innerHeight && r.bottom > 0; };
     const open = () => {
-      if (shown || seen('aangemeld') || seen('popup') || inView()) return;
+      if (shown || (!force && (seen('aangemeld') || seen('popup') || inView()))) return;
       shown = true; lastFocus = document.activeElement;
       pop.hidden = false; requestAnimationFrame(() => pop.classList.add('on'));
       setTimeout(() => document.getElementById('pNaam').focus({ preventScroll: true }), 350);
@@ -542,6 +543,7 @@ footer{padding-bottom:100px}
     };
     const onScroll = () => { const max = document.documentElement.scrollHeight - innerHeight; if (max > 0 && scrollY / max > 0.4) open(); };
     addEventListener('scroll', onScroll, { passive: true });
+    if (force) setTimeout(open, 2000);
     setTimeout(open, 25000);
     document.getElementById('popX').addEventListener('click', close);
     document.getElementById('popLater').addEventListener('click', close);
